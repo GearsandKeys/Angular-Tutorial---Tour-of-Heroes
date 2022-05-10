@@ -325,3 +325,224 @@ Bind the HeroesComponent.selectedHero to the element's hero property like this.
 ```
 <app-hero-detail [hero]="selectedHero"></app-hero-detail>
 ```
+
+## Add Services
+### Why Services?
+Components shouldn't fetch or save data directly and they certainly shouldn't knowingly present fake data. They should focus on presenting data and delegate data access to a service.
+
+Services are a great way to share information among classes that _don't know each other_.
+
+### Creating a Service
+``` ng g service hero```
+
+The command generates a skeleton HeroService class in src/app/hero.service.ts
+
+### @Injectable() Services
+Notice that the new service imports the Angular Injectable symbol and annotates the class with the [`@Injectable()`](https://angular.io/api/core/Injectable) decorator. This marks the class as one that participates in the _dependency injection system._
+
+The @Injectable() decorator accepts a metadata object for the service, the same way the @Component() decorator did for your component classes.
+
+### Getting Data
+A service can get data from anywhere -  a web service, local storage, or mock data.
+
+Removing data access from components means you can change your mind about the implementation anytime, without touching any components. They don't know how the service works.
+
+Lets add mock heroes to our service:
+1. Import it
+```
+// in hero.service.ts
+import { Hero } from './hero';
+import { HEROES } from './mock-heroes';
+```
+2. Add a `getHeroes` method to return the _mock heroes_
+```
+// in hero.service.ts
+getHeroes(): Hero[] {
+  return HEROES;
+}
+```
+
+### Provide the HeroService
+You must make a service available to the dependency injection system before Angular can inject it into a component by registering a provider. A provider is something that can create or deliver a service; in this case, it instantiates the HeroService class to provide the service.
+
+To make sure that the HeroService can provide this service, register it with the injector, which is the object that is responsible for choosing and injecting the provider where the application requires it.
+
+By default, the Angular CLI command ng generate service registers a provider with the root injector for your service by including provider metadata, that is providedIn: 'root' in the @Injectable() decorator.
+
+```
+@Injectable({
+  providedIn: 'root',
+})
+```
+
+When you provide the service at the root level, Angular creates a single, shared instance of HeroService and injects into any class that asks for it. Registering the provider in the @Injectable metadata also allows Angular to optimize an application by removing the service if it turns out not to be used after all.
+
+[More on Providers](https://angular.io/guide/providers)
+[More on Dependency Injection](https://angular.io/guide/dependency-injection)
+
+### Updating HeroesComponent to Use Service
+Delete the Heroes import and replace it with the HeroService
+and Replace the definition of the `heroes` property with a declaration
+
+```
+// inside heroes.component.ts
+import { HeroService } from '../hero.service';
+
+...
+
+`heroes: Hero[] = [];`
+```
+### Inject the Service
+Add a private heroeService parameter of type HeroService to the constructor.
+`constructor(private heroService: HeroService) {}`
+
+The parameter simultaneously defines a private heroService property and identifies it as a HeroService injection site.
+
+When Angular creates a HeroesComponent, the Dependency Injection system sets the heroService parameter to the singleton instance of HeroService.
+
+### Adding Methods to a Service
+Create a method to retrieve the heroes from the service.
+```
+getHeroes(): void {
+  this.heroes = this.heroService.getHeroes();
+}
+```
+
+### Good Use of ngOnInit()
+While you could call getHeroes() in the constructor, that's not the best practice. 
+
+Reserve the constructor for minimal initializations such as wiring constructor parameters to properties. The constructor shouldn't _do anything_. It certainly shouldn't call a function that makes HTTP requests to a remote server as a real data service would.
+
+Instead, call getHeroes() inside the ngOnInit lifecycle hook and let Angular call ngOnInit() at an appropriate time after constructing a HeroesComponent instance.
+```
+ngOnInit(): void {
+  this.getHeroes();
+}
+```
+
+### Observable Data and Asynchronous Operation
+Right now the HeroService.getHeroes() method has a synchronous signature. This works with mock data, but would fail if it were fetching from a remote server (which is a asynchornous operation) 
+
+### Observable HeroService
+Angulars [HttpClient](https://angular.io/api/common/http/HttpClient) methods return [RxJS](https://rxjs.dev/) Observables. 
+
+To simulate getting data from the server with the RxJS of() function:
+
+Open the HeroService file and import the Observable and of symbols from RxJS.
+```
+// in hero.service
+import { Observable, of } from 'rxjs';
+```
+Replace the getHeroes() method with the following:
+```
+getHeroes(): Observable<Hero[]> {
+  const heroes = of(HEROES);
+  return heroes;
+}
+```
+of(HEROES) returns an Observable<Hero[]> that emits a single value, the array of mock heroes.
+
+### Subscribing in HeroesComponent
+The HeroService.getHeroes method used to return a Hero[]. Now it returns an Observable<Hero[]>.
+
+You'll have to adjust to that difference in HeroesComponent.
+
+Find the getHeroes method and replace it with the following code
+```
+// in heroes.component.ts
+getHeroes(): void {
+  this.heroService.getHeroes()
+      .subscribe(heroes => this.heroes = heroes);
+}
+```
+Observable.subscribe() is the critical difference.
+
+This waits for the Observable to emit the array of heroes —which could happen now or several minutes from now. The subscribe() method passes the emitted array to the callback, which sets the component's heroes property.
+
+### Show Messages
+Create your messages component:
+`ng g component messages`
+
+Modify the AppComponent template to display the generated MessagesComponent.
+```
+// in app.component.html
+<h1>{{title}}</h1>
+<app-heroes></app-heroes>
+<app-messages></app-messages>
+```
+
+### Messages Service
+Create the messages service:
+`ng g service message`
+
+Replace its contents with:
+```
+import { Injectable } from '@angular/core';
+
+@Injectable({
+  providedIn: 'root',
+})
+export class MessageService {
+  messages: string[] = [];
+
+  add(message: string) {
+    this.messages.push(message);
+  }
+
+  clear() {
+    this.messages = [];
+  }
+}
+```
+
+### Inject it into the HeroService
+Import the `MessageService` into `hero.service.ts`
+
+in `hero.service.ts` modify the constructor with a parameter to declare a private messageService property. Angular will inject the singleton `MessageService` into that property when it creates the `HeroService`
+
+`constructor(private messageService: MessageService) { }`
+
+_This is a typical "service-in-service" scenario: You inject the MessageService into the HeroService which is injected into the HeroesComponent._
+
+### Sending Messages
+Modify getHeroes() method to send a message when heroes are fetched.
+
+```
+getHeroes(): Observable<Hero[]> {
+  const heroes = of(HEROES);
+  this.messageService.add('HeroService: fetched heroes');
+  return heroes;
+}
+```
+
+### Display Messages
+Go to `messages.component.ts` and import the message service
+```import { MessageService } from '../message.service';```
+
+Modify the constructor with a parameter that declares a public messageService property. Angular will inject the singleton MessageService into that property when it creates the MessagesComponent.
+```
+constructor(public messageService: MessageService) {}
+```
+
+The _messageService_ property must be public because you're going to bind to it in the template.
+
+_Angular only binds to public component properties._
+
+### Bind to the MessageService
+Replace the messages.component.html with:
+```
+<div *ngIf="messageService.messages.length">
+
+  <h2>Messages</h2>
+  <button type="button" class="clear"
+          (click)="messageService.clear()">Clear messages</button>
+  <div *ngFor='let message of messageService.messages'> {{message}} </div>
+
+</div>
+```
+
+### Additional Messages to Hero Service
+WE can add the message service to the constructor of the `heroes.component.ts` and add to the method of when a hero is selected we:
+```
+this.messageService.add(`HeroesComponent: Selected hero id=${hero.id}`)
+```
